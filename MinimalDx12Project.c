@@ -30,6 +30,8 @@
 #include <cglm/clipspace/view_lh.h>
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #pragma comment(linker, "/DEFAULTLIB:D3d12.lib")
 #pragma comment(linker, "/DEFAULTLIB:DXGI.lib")
@@ -107,6 +109,7 @@ int WindowHeight = 600;
 bool bFullScreen = false;
 bool bTearingSupport = false;
 bool bVsync = false;
+bool bWarp = false;
 
 #ifdef _DEBUG
 ID3D12Debug6* DebugController;
@@ -132,7 +135,7 @@ UINT64 FenceValue[BUFFER_COUNT];
 
 int FrameIndex;
 
-int rtvDescriptorSize;
+int RtvDescriptorSize;
 
 void WaitForPreviousFrame();
 
@@ -152,7 +155,7 @@ D3D12_VERTEX_BUFFER_VIEW VertexBufferView = { 0 };
 D3D12_INDEX_BUFFER_VIEW IndexBufferView = { 0 };
 
 ID3D12Resource* DepthStencilBuffer;
-ID3D12DescriptorHeap* dsDescriptorHeap;
+ID3D12DescriptorHeap* DepthStencilDescriptorHeap;
 
 struct ConstantBufferPerObject {
 	mat4 wvpMat;
@@ -170,7 +173,7 @@ int numCubeIndices;
 
 ID3D12Resource* TextureBuffer;
 
-ID3D12DescriptorHeap* mainDescriptorHeap;
+ID3D12DescriptorHeap* MainDescriptorHeap;
 ID3D12Resource* TextureBufferUploadHeap;
 
 struct Vertex {
@@ -242,15 +245,17 @@ int main()
 	THROW_ON_FAIL(CreateDXGIFactory2(0, &IID_IDXGIFactory6, &Factory));
 #endif
 
-	BOOL allowTearing = FALSE;
+	{
+		BOOL allowTearing = FALSE;
 
-	THROW_ON_FAIL(IDXGIFactory6_CheckFeatureSupport(
-		Factory,
-		DXGI_FEATURE_PRESENT_ALLOW_TEARING,
-		&allowTearing,
-		sizeof(allowTearing)));
+		THROW_ON_FAIL(IDXGIFactory6_CheckFeatureSupport(
+			Factory,
+			DXGI_FEATURE_PRESENT_ALLOW_TEARING,
+			&allowTearing,
+			sizeof(allowTearing)));
 
-	bTearingSupport = (allowTearing == TRUE);
+		bTearingSupport = (allowTearing == TRUE);
+	}
 
 #ifdef _DEBUG
 	ID3D12Debug* DebugControllerV1;
@@ -267,7 +272,14 @@ int main()
 
 	IDXGIAdapter1* Adapter;
 
-	IDXGIFactory6_EnumAdapterByGpuPreference(Factory, 0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, &IID_IDXGIAdapter1, &Adapter);
+	if (bWarp)
+	{
+		IDXGIFactory6_EnumWarpAdapter(Factory, &IID_IDXGIAdapter1, &Adapter);
+	}
+	else
+	{
+		IDXGIFactory6_EnumAdapterByGpuPreference(Factory, 0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, &IID_IDXGIAdapter1, &Adapter);
+	}
 
 	THROW_ON_FAIL(D3D12CreateDevice(Adapter, D3D_FEATURE_LEVEL_12_1, &IID_ID3D12Device, &Device));
 
@@ -328,15 +340,15 @@ int main()
 	FrameIndex = IDXGISwapChain3_GetCurrentBackBufferIndex(SwapChain);
 
 	{
-		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = { 0 };
-		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		rtvHeapDesc.NumDescriptors = BUFFER_COUNT;
-		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		D3D12_DESCRIPTOR_HEAP_DESC RtvHeapDesc = { 0 };
+		RtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		RtvHeapDesc.NumDescriptors = BUFFER_COUNT;
+		RtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 
-		THROW_ON_FAIL(ID3D12Device_CreateDescriptorHeap(Device, &rtvHeapDesc, &IID_ID3D12DescriptorHeap, &rtvDescriptorHeap));
+		THROW_ON_FAIL(ID3D12Device_CreateDescriptorHeap(Device, &RtvHeapDesc, &IID_ID3D12DescriptorHeap, &rtvDescriptorHeap));
 	}
 	
-	rtvDescriptorSize = ID3D12Device_GetDescriptorHandleIncrementSize(Device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	RtvDescriptorSize = ID3D12Device_GetDescriptorHandleIncrementSize(Device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle;
 	ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(rtvDescriptorHeap, &rtvHandle);
@@ -347,7 +359,7 @@ int main()
 
 		ID3D12Device_CreateRenderTargetView(Device, RenderTargets[i], nullptr, rtvHandle);
 
-		rtvHandle.ptr += rtvDescriptorSize;
+		rtvHandle.ptr += RtvDescriptorSize;
 	}
 
 	THROW_ON_FAIL(ID3D12Device_CreateCommandAllocator(Device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &CommandAllocator));
@@ -408,12 +420,12 @@ int main()
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
 	{
-		ID3D10Blob* errorBuff;
-		ID3D10Blob* signature;
-		THROW_ON_FAIL(D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &errorBuff));
+		ID3D10Blob* ErrorBuff;
+		ID3D10Blob* Signature;
+		THROW_ON_FAIL(D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &Signature, &ErrorBuff));
 
-		THROW_ON_FAIL(ID3D12Device_CreateRootSignature(Device, 0, ID3D10Blob_GetBufferPointer(signature), ID3D10Blob_GetBufferSize(signature), &IID_ID3D12RootSignature, &RootSignature));
-		ID3D10Blob_Release(signature);
+		THROW_ON_FAIL(ID3D12Device_CreateRootSignature(Device, 0, ID3D10Blob_GetBufferPointer(Signature), ID3D10Blob_GetBufferSize(Signature), &IID_ID3D12RootSignature, &RootSignature));
+		ID3D10Blob_Release(Signature);
 	}
 
 	HANDLE VertexShaderFile = CreateFileW(
@@ -464,9 +476,7 @@ int main()
 
 	{
 		LARGE_INTEGER tempLongInteger;
-
 		THROW_ON_FALSE(GetFileSizeEx(PixelShaderFile, &tempLongInteger));
-
 		PixelShaderSize = tempLongInteger.QuadPart;
 	}
 
@@ -737,11 +747,11 @@ int main()
 		dsvHeapDesc.NumDescriptors = 1;
 		dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 
-		THROW_ON_FAIL(ID3D12Device_CreateDescriptorHeap(Device, &dsvHeapDesc, &IID_ID3D12DescriptorHeap, &dsDescriptorHeap));
+		THROW_ON_FAIL(ID3D12Device_CreateDescriptorHeap(Device, &dsvHeapDesc, &IID_ID3D12DescriptorHeap, &DepthStencilDescriptorHeap));
 	}
 
 #ifdef _DEBUG
-	ID3D12DescriptorHeap_SetName(dsDescriptorHeap, L"Depth/Stencil Resource Heap");
+	ID3D12DescriptorHeap_SetName(DepthStencilDescriptorHeap, L"Depth/Stencil Resource Heap");
 #endif
 
 	{
@@ -784,7 +794,7 @@ int main()
 		DepthStencilViewDesc.Flags = D3D12_DSV_FLAG_NONE;
 
 		D3D12_CPU_DESCRIPTOR_HANDLE CpuDescriptorHandle;
-		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(dsDescriptorHeap, &CpuDescriptorHandle);
+		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(DepthStencilDescriptorHeap, &CpuDescriptorHandle);
 
 		ID3D12Device_CreateDepthStencilView(Device, DepthStencilBuffer, &DepthStencilViewDesc, CpuDescriptorHandle);
 	}
@@ -832,7 +842,7 @@ int main()
 		HeapDesc.NumDescriptors = 1;
 		HeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		HeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		THROW_ON_FAIL(ID3D12Device_CreateDescriptorHeap(Device, &HeapDesc, &IID_ID3D12DescriptorHeap, &mainDescriptorHeap));
+		THROW_ON_FAIL(ID3D12Device_CreateDescriptorHeap(Device, &HeapDesc, &IID_ID3D12DescriptorHeap, &MainDescriptorHeap));
 	}
 
 	const int textureWidth = 64;
@@ -849,7 +859,7 @@ int main()
 	TextureResourceDesc.Format = DXGI_FORMAT_B5G6R5_UNORM;
 	TextureResourceDesc.SampleDesc.Count = 1;
 	TextureResourceDesc.SampleDesc.Quality = 0;
-	TextureResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;//todo: strange?
+	TextureResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	TextureResourceDesc.Flags = 0;
 
 	{
@@ -946,7 +956,7 @@ int main()
 	ResourceViewDesc.Texture2D.MipLevels = 1;
 
 	D3D12_CPU_DESCRIPTOR_HANDLE CpuDescriptorHandle2;
-	ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(mainDescriptorHeap, &CpuDescriptorHandle2);
+	ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(MainDescriptorHeap, &CpuDescriptorHandle2);
 
 	ID3D12Device_CreateShaderResourceView(Device, TextureBuffer, &ResourceViewDesc, CpuDescriptorHandle2);
 
@@ -978,7 +988,6 @@ int main()
 	ScissorRect.right = WindowWidth;
 	ScissorRect.bottom = WindowHeight;
 
-	//mathy stuff
 	mat4 tmpMat;
 	glm_perspective_lh_zo(45.0f * (3.14f / 180.0f), (float)WindowWidth / (float)WindowHeight, 0.1f, 1000.0f, tmpMat);
 
@@ -1019,7 +1028,6 @@ int main()
 	glm_mat4_identity(cube2RotMat);
 
 	glm_mat4_copy(tmpMat, cube2WorldMat);
-
 
 	THROW_ON_FALSE(SetWindowLongPtrA(Window, GWLP_WNDPROC, (LONG_PTR)WndProc) != 0);
 
@@ -1071,7 +1079,7 @@ int main()
 	THROW_ON_FAIL(ID3D12CommandQueue_Release(CommandQueue));
 
 	THROW_ON_FAIL(ID3D12DescriptorHeap_Release(rtvDescriptorHeap));
-	THROW_ON_FAIL(ID3D12DescriptorHeap_Release(dsDescriptorHeap));
+	THROW_ON_FAIL(ID3D12DescriptorHeap_Release(DepthStencilDescriptorHeap));
 
 #ifdef _DEBUG
 	THROW_ON_FAIL(ID3D12InfoQueue_Release(InfoQueue));
@@ -1167,13 +1175,12 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		}
 		break;
 	case WM_SIZE:
-	
-
 	if (IsIconic(Window))
 	{
 		THROW_ON_FALSE(SetWindowLongPtrW(Window, GWLP_WNDPROC, (LONG_PTR)IdleProc) != 0);
 		break;
 	}
+
 	THROW_ON_FALSE(GetClientRect(Window, &ClientRect));
 
 	if (WindowWidth != (ClientRect.right - ClientRect.left) || WindowHeight != (ClientRect.bottom - ClientRect.top))
@@ -1182,7 +1189,6 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		WindowHeight = ClientRect.bottom - ClientRect.top;
 		WaitForPreviousFrame();
 		
-
 		for (int i = 0; i < BUFFER_COUNT; i++)
 		{
 			THROW_ON_FAIL(ID3D12Resource_Release(RenderTargets[i]));
@@ -1206,7 +1212,7 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 
 			ID3D12Device_CreateRenderTargetView(Device, RenderTargets[i], nullptr, rtvHandle);
 
-			rtvHandle.ptr += rtvDescriptorSize;
+			rtvHandle.ptr += RtvDescriptorSize;
 		}
 
 		{
@@ -1255,10 +1261,8 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		ScissorRect.bottom = (LONG)WindowHeight;
 
 		glm_perspective_lh_zo(45.0f * (3.14f / 180.0f), (float)WindowWidth / (float)WindowHeight, 0.1f, 1000.0f, cameraProjMat);
-
+		break;
 	}
-	break;
-	
 	case WM_PAINT:
 	{
 		WaitForPreviousFrame();
@@ -1269,8 +1273,6 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		tickCount.QuadPart = tickCountNow.QuadPart;
 
 		double MovementFactor = (tickCountDelta / ((double)ProcessorFrequency.QuadPart)) * 75.f;
-
-		//more mathy stuff:
 
 		mat4 rotXMat;
 		glm_mat4_identity(rotXMat);
@@ -1370,10 +1372,10 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		D3D12_CPU_DESCRIPTOR_HANDLE HeapStart;
 		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(rtvDescriptorHeap, &HeapStart);
 
-		rtvHandle.ptr = HeapStart.ptr + (FrameIndex * rtvDescriptorSize);
+		rtvHandle.ptr = HeapStart.ptr + (FrameIndex * RtvDescriptorSize);
 
 		D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle;
-		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(dsDescriptorHeap, &dsvHandle);
+		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(DepthStencilDescriptorHeap, &dsvHandle);
 
 		ID3D12GraphicsCommandList_OMSetRenderTargets(CommandList, 1, &rtvHandle, FALSE, &dsvHandle);
 
@@ -1382,16 +1384,16 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 
 		D3D12_CPU_DESCRIPTOR_HANDLE CpuDescHandle;
 
-		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(dsDescriptorHeap, &CpuDescHandle);
+		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(DepthStencilDescriptorHeap, &CpuDescHandle);
 
 		ID3D12GraphicsCommandList_ClearDepthStencilView(CommandList, CpuDescHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 		ID3D12GraphicsCommandList_SetGraphicsRootSignature(CommandList, RootSignature);
 
-		ID3D12DescriptorHeap* descriptorHeaps[] = { mainDescriptorHeap };
+		ID3D12DescriptorHeap* descriptorHeaps[] = { MainDescriptorHeap };
 		ID3D12GraphicsCommandList_SetDescriptorHeaps(CommandList, countof(descriptorHeaps), descriptorHeaps);
 
 		D3D12_GPU_DESCRIPTOR_HANDLE GpuDescHandle;
-		ID3D12DescriptorHeap_GetGPUDescriptorHandleForHeapStart(mainDescriptorHeap, &GpuDescHandle);
+		ID3D12DescriptorHeap_GetGPUDescriptorHandleForHeapStart(MainDescriptorHeap, &GpuDescHandle);
 		ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(CommandList, 1, GpuDescHandle);
 		ID3D12GraphicsCommandList_RSSetViewports(CommandList, 1, &Viewport);
 		ID3D12GraphicsCommandList_RSSetScissorRects(CommandList, 1, &ScissorRect);
@@ -1443,6 +1445,6 @@ inline void WaitForPreviousFrame()
 	if (ID3D12Fence_GetCompletedValue(Fence[FrameIndex]) < FenceValue[FrameIndex])
 	{
 		THROW_ON_FAIL(ID3D12Fence_SetEventOnCompletion(Fence[FrameIndex], FenceValue[FrameIndex], FenceEvent));
-		WaitForSingleObject(FenceEvent, INFINITE);
+		THROW_ON_FALSE(WaitForSingleObject(FenceEvent, INFINITE) == WAIT_OBJECT_0);
 	}
 }
