@@ -10,15 +10,17 @@ struct VS_OUTPUT
     float2 texCoord : TEXCOORD;
 };
 
-cbuffer ConstantBuffer : register(b0)
+struct ConstantBufferData
 {
-    float4x4 wvpMat;
+    float4x4 mvp;
 };
+
+ConstantBuffer<ConstantBufferData> wvpMat : register(b0);
 
 VS_OUTPUT main(VS_INPUT input)
 {
     VS_OUTPUT output;
-    output.pos = mul(input.pos, wvpMat);
+    output.pos = mul(input.pos, wvpMat.mvp);
     output.texCoord = input.texCoord;
     return output;
 }

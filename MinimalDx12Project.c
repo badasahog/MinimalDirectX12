@@ -22,10 +22,6 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 
-#include <D3Dcompiler.h>
-
-#include <wincodec.h>
-
 #include <cglm/cglm.h>
 #include <cglm/struct.h>
 #include <cglm/call.h>
@@ -37,9 +33,7 @@
 
 #pragma comment(linker, "/DEFAULTLIB:D3d12.lib")
 #pragma comment(linker, "/DEFAULTLIB:DXGI.lib")
-#pragma comment(linker, "/DEFAULTLIB:D3DCompiler.lib")
 #pragma comment(linker, "/DEFAULTLIB:dxguid.lib")
-#pragma comment(linker, "/DEFAULTLIB:windowscodecs.lib")
 
 __declspec(dllexport) DWORD NvOptimusEnablement = 1;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
@@ -114,8 +108,6 @@ bool bFullScreen = false;
 bool bTearingSupport = false;
 bool bVsync = false;
 
-bool Running = true;
-
 #ifdef _DEBUG
 ID3D12Debug6* DebugController;
 #endif
@@ -168,20 +160,18 @@ struct ConstantBufferPerObject {
 
 int ConstantBufferPerObjectAlignedSize = (sizeof(struct ConstantBufferPerObject) + 255) & ~255;
 
-struct ConstantBufferPerObject cbPerObject = { 0 };
+struct ConstantBufferPerObject ConstantBufferPerObject = { 0 };
 
 ID3D12Resource* ConstantBufferUploadHeaps[BUFFER_COUNT];
 
-UINT8* cbvGPUAddress[BUFFER_COUNT];
+UINT8* ConstantBufferGPUAddress[BUFFER_COUNT];
 
 int numCubeIndices;
 
-ID3D12Resource* textureBuffer;
+ID3D12Resource* TextureBuffer;
 
 ID3D12DescriptorHeap* mainDescriptorHeap;
 ID3D12Resource* TextureBufferUploadHeap;
-
-BYTE* imageData;
 
 struct Vertex {
 	vec3 pos;
@@ -192,12 +182,12 @@ mat4 cube1RotMat;
 vec3 cube1Position = { 0.0f, 0.0f, 0.0f };
 mat4 cube1WorldMat;
 
-mat4 cameraViewMat;
-mat4 cameraProjMat = { 0 };
-
 mat4 cube2RotMat;
 vec3 cube2PositionOffset = { 1.5f, 0.0f, 0.0f };
 mat4 cube2WorldMat;
+
+mat4 cameraViewMat;
+mat4 cameraProjMat = { 0 };
 
 int main()
 {
@@ -313,16 +303,16 @@ int main()
 
 	{
 		DXGI_SWAP_CHAIN_DESC SwapChainDesc = { 0 };
-		SwapChainDesc.BufferCount = BUFFER_COUNT;
 		SwapChainDesc.BufferDesc.Width = WindowWidth;
 		SwapChainDesc.BufferDesc.Height = WindowHeight;
 		SwapChainDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		SwapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		SwapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-		SwapChainDesc.OutputWindow = Window;
 		SwapChainDesc.SampleDesc.Count = 1;
 		SwapChainDesc.SampleDesc.Quality = 0;
+		SwapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		SwapChainDesc.BufferCount = BUFFER_COUNT;
+		SwapChainDesc.OutputWindow = Window;
 		SwapChainDesc.Windowed = TRUE;
+		SwapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 		SwapChainDesc.Flags = bTearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
 		IDXGISwapChain* tempSwapChain;
@@ -382,8 +372,8 @@ int main()
 
 	D3D12_ROOT_PARAMETER  RootParameters[2] = { 0 };
 	RootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-	RootParameters[0].Descriptor.RegisterSpace = 0;
 	RootParameters[0].Descriptor.ShaderRegister = 0;
+	RootParameters[0].Descriptor.RegisterSpace = 0;
 	RootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
 	RootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -499,30 +489,11 @@ int main()
 	};
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC PsoDesc = { 0 };
-	PsoDesc.InputLayout.NumElements = countof(InputElementDesc);
-	PsoDesc.InputLayout.pInputElementDescs = InputElementDesc;
 	PsoDesc.pRootSignature = RootSignature;
-	PsoDesc.VS.BytecodeLength = VertexShaderSize;
 	PsoDesc.VS.pShaderBytecode = VertexShaderBytecode;
-	PsoDesc.PS.BytecodeLength = PixelShaderSize;
+	PsoDesc.VS.BytecodeLength = VertexShaderSize;
 	PsoDesc.PS.pShaderBytecode = PixelShaderBytecode;
-	PsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	PsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	PsoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-	PsoDesc.SampleDesc.Count = 1;
-	PsoDesc.SampleDesc.Quality = 0;
-	PsoDesc.SampleMask = 0xffffffff;
-	PsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-	PsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-	PsoDesc.RasterizerState.FrontCounterClockwise = FALSE;
-	PsoDesc.RasterizerState.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
-	PsoDesc.RasterizerState.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-	PsoDesc.RasterizerState.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-	PsoDesc.RasterizerState.DepthClipEnable = TRUE;
-	PsoDesc.RasterizerState.MultisampleEnable = FALSE;
-	PsoDesc.RasterizerState.AntialiasedLineEnable = FALSE;
-	PsoDesc.RasterizerState.ForcedSampleCount = 0;
-	PsoDesc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+	PsoDesc.PS.BytecodeLength = PixelShaderSize;
 	PsoDesc.BlendState.AlphaToCoverageEnable = FALSE;
 	PsoDesc.BlendState.IndependentBlendEnable = FALSE;
 	for (int i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
@@ -538,7 +509,18 @@ int main()
 		PsoDesc.BlendState.RenderTarget[i].LogicOp = D3D12_LOGIC_OP_NOOP;
 		PsoDesc.BlendState.RenderTarget[i].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 	}
-	PsoDesc.NumRenderTargets = 1;
+	PsoDesc.SampleMask = 0xffffffff;
+	PsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+	PsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	PsoDesc.RasterizerState.FrontCounterClockwise = FALSE;
+	PsoDesc.RasterizerState.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+	PsoDesc.RasterizerState.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+	PsoDesc.RasterizerState.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+	PsoDesc.RasterizerState.DepthClipEnable = TRUE;
+	PsoDesc.RasterizerState.MultisampleEnable = FALSE;
+	PsoDesc.RasterizerState.AntialiasedLineEnable = FALSE;
+	PsoDesc.RasterizerState.ForcedSampleCount = 0;
+	PsoDesc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
 	PsoDesc.DepthStencilState.DepthEnable = TRUE;
 	PsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 	PsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
@@ -553,6 +535,14 @@ int main()
 	PsoDesc.DepthStencilState.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 	PsoDesc.DepthStencilState.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
 	PsoDesc.DepthStencilState.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	PsoDesc.InputLayout.NumElements = countof(InputElementDesc);
+	PsoDesc.InputLayout.pInputElementDescs = InputElementDesc;
+	PsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	PsoDesc.NumRenderTargets = 1;
+	PsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	PsoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+	PsoDesc.SampleDesc.Count = 1;
+	PsoDesc.SampleDesc.Quality = 0;
 
 	THROW_ON_FAIL(ID3D12Device_CreateGraphicsPipelineState(Device, &PsoDesc, &IID_ID3D12PipelineState, &PipelineStateObject));
 
@@ -565,44 +555,38 @@ int main()
 	THROW_ON_FALSE(CloseHandle(PixelShaderFile));
 
 	struct Vertex VertexList[] = {
-		// front face
 		{ -0.5f,  0.5f, -0.5f, 0.0f, 0.0f },
 		{  0.5f, -0.5f, -0.5f, 1.0f, 1.0f },
 		{ -0.5f, -0.5f, -0.5f, 0.0f, 1.0f },
 		{  0.5f,  0.5f, -0.5f, 1.0f, 0.0f },
 
-		// right side face
 		{  0.5f, -0.5f, -0.5f, 0.0f, 1.0f },
 		{  0.5f,  0.5f,  0.5f, 1.0f, 0.0f },
 		{  0.5f, -0.5f,  0.5f, 1.0f, 1.0f },
 		{  0.5f,  0.5f, -0.5f, 0.0f, 0.0f },
 
-		// left side face
 		{ -0.5f,  0.5f,  0.5f, 0.0f, 0.0f },
 		{ -0.5f, -0.5f, -0.5f, 1.0f, 1.0f },
 		{ -0.5f, -0.5f,  0.5f, 0.0f, 1.0f },
 		{ -0.5f,  0.5f, -0.5f, 1.0f, 0.0f },
 
-		// back face
 		{  0.5f,  0.5f,  0.5f, 0.0f, 0.0f },
 		{ -0.5f, -0.5f,  0.5f, 1.0f, 1.0f },
 		{  0.5f, -0.5f,  0.5f, 0.0f, 1.0f },
 		{ -0.5f,  0.5f,  0.5f, 1.0f, 0.0f },
 
-		// top face
 		{ -0.5f,  0.5f, -0.5f, 0.0f, 1.0f },
 		{  0.5f,  0.5f,  0.5f, 1.0f, 0.0f },
 		{  0.5f,  0.5f, -0.5f, 1.0f, 1.0f },
 		{ -0.5f,  0.5f,  0.5f, 0.0f, 0.0f },
 
-		// bottom face
 		{  0.5f, -0.5f,  0.5f, 0.0f, 0.0f },
 		{ -0.5f, -0.5f, -0.5f, 1.0f, 1.0f },
 		{  0.5f, -0.5f, -0.5f, 0.0f, 1.0f },
 		{ -0.5f, -0.5f,  0.5f, 1.0f, 0.0f },
 	};
 
-	ID3D12Resource* vBufferUploadHeap;
+	ID3D12Resource* VertexBufferUploadHeap;
 
 	{
 		D3D12_RESOURCE_DESC ResourceDesc = { 0 };
@@ -626,7 +610,10 @@ int main()
 		HeapProperties.VisibleNodeMask = 1;
 
 		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, &IID_ID3D12Resource, &VertexBuffer));
+		
+#ifdef _DEBUG
 		ID3D12Resource_SetName(VertexBuffer, L"Vertex Buffer Resource Heap");
+#endif
 		
 		D3D12_HEAP_PROPERTIES UploadHeapProperties = { 0 };
 		UploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -635,17 +622,20 @@ int main()
 		UploadHeapProperties.CreationNodeMask = 1;
 		UploadHeapProperties.VisibleNodeMask = 1;
 
-		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &UploadHeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &IID_ID3D12Resource, &vBufferUploadHeap));
-		ID3D12Resource_SetName(vBufferUploadHeap, L"Vertex Buffer Upload Resource Heap");
+		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &UploadHeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &IID_ID3D12Resource, &VertexBufferUploadHeap));
 		
+#ifdef _DEBUG
+		ID3D12Resource_SetName(VertexBufferUploadHeap, L"Vertex Buffer Upload Resource Heap");
+#endif
+
 		void* pData;
-		THROW_ON_FAIL(ID3D12Resource_Map(vBufferUploadHeap, 0, nullptr, &pData));
+		THROW_ON_FAIL(ID3D12Resource_Map(VertexBufferUploadHeap, 0, nullptr, &pData));
 
 		MEMCPY_VERIFY(memcpy_s(pData, sizeof(VertexList), VertexList, sizeof(VertexList)));
 		
-		ID3D12Resource_Unmap(vBufferUploadHeap, 0, nullptr);
+		ID3D12Resource_Unmap(VertexBufferUploadHeap, 0, nullptr);
 
-		ID3D12GraphicsCommandList_CopyBufferRegion(CommandList, VertexBuffer, 0, vBufferUploadHeap, 0, sizeof(VertexList));
+		ID3D12GraphicsCommandList_CopyBufferRegion(CommandList, VertexBuffer, 0, VertexBufferUploadHeap, 0, sizeof(VertexList));
 	}
 
 	{
@@ -653,38 +643,26 @@ int main()
 		ResourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		ResourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
 		ResourceBarrier.Transition.pResource = VertexBuffer;
+		ResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 		ResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
 		ResourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-		ResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 
 		ID3D12GraphicsCommandList_ResourceBarrier(CommandList, 1, &ResourceBarrier);
 	}
 
-	// a quad (2 triangles)
 	WORD IndexList[] = {
-		// front face
-		0, 1, 2, // first triangle
-		0, 3, 1, // second triangle
-
-		// left face
-		4, 5, 6, // first triangle
-		4, 7, 5, // second triangle
-
-		// right face
-		8, 9, 10, // first triangle
-		8, 11, 9, // second triangle
-
-		// back face
-		12, 13, 14, // first triangle
-		12, 15, 13, // second triangle
-
-		// top face
-		16, 17, 18, // first triangle
-		16, 19, 17, // second triangle
-
-		// bottom face
-		20, 21, 22, // first triangle
-		20, 23, 21, // second triangle
+		0, 1, 2,
+		0, 3, 1,
+		4, 5, 6,
+		4, 7, 5,
+		8, 9, 10,
+		8, 11, 9,
+		12, 13, 14,
+		12, 15, 13,
+		16, 17, 18,
+		16, 19, 17,
+		20, 21, 22,
+		20, 23, 21,
 	};
 
 	numCubeIndices = countof(IndexList);
@@ -713,7 +691,10 @@ int main()
 		HeapProperties.VisibleNodeMask = 1;
 
 		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, &IID_ID3D12Resource, &IndexBuffer));
+
+#ifdef _DEBUG
 		ID3D12Resource_SetName(IndexBuffer, L"Index Buffer Resource Heap");
+#endif
 		
 		D3D12_HEAP_PROPERTIES UploadHeapProperties = { 0 };
 		UploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -723,7 +704,10 @@ int main()
 		UploadHeapProperties.VisibleNodeMask = 1;
 
 		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &UploadHeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &IID_ID3D12Resource, &IndexBufferUploadHeap));
+
+#ifdef _DEBUG
 		ID3D12Resource_SetName(IndexBufferUploadHeap, L"Index Buffer Upload Resource Heap");
+#endif
 
 		void* pData;
 		THROW_ON_FAIL(ID3D12Resource_Map(IndexBufferUploadHeap, 0, nullptr, &pData));
@@ -740,9 +724,9 @@ int main()
 		ResourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		ResourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
 		ResourceBarrier.Transition.pResource = IndexBuffer;
+		ResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 		ResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
 		ResourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_INDEX_BUFFER;
-		ResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 
 		ID3D12GraphicsCommandList_ResourceBarrier(CommandList, 1, &ResourceBarrier);
 	}
@@ -756,7 +740,9 @@ int main()
 		THROW_ON_FAIL(ID3D12Device_CreateDescriptorHeap(Device, &dsvHeapDesc, &IID_ID3D12DescriptorHeap, &dsDescriptorHeap));
 	}
 
+#ifdef _DEBUG
 	ID3D12DescriptorHeap_SetName(dsDescriptorHeap, L"Depth/Stencil Resource Heap");
+#endif
 
 	{
 		D3D12_HEAP_PROPERTIES HeapProperties = { 0 };
@@ -787,11 +773,15 @@ int main()
 		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &ScreenClearValue, &IID_ID3D12Resource, &DepthStencilBuffer));
 	}
 
+#ifdef _DEBUG
+	ID3D12DescriptorHeap_SetName(DepthStencilBuffer, L"Depth/Stencil Buffer");
+#endif
+
 	{
 		D3D12_DEPTH_STENCIL_VIEW_DESC DepthStencilViewDesc = { 0 };
 		DepthStencilViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
 		DepthStencilViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-		DepthStencilViewDesc.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH;
+		DepthStencilViewDesc.Flags = D3D12_DSV_FLAG_NONE;
 
 		D3D12_CPU_DESCRIPTOR_HANDLE CpuDescriptorHandle;
 		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(dsDescriptorHeap, &CpuDescriptorHandle);
@@ -823,16 +813,18 @@ int main()
 
 		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &IID_ID3D12Resource, &ConstantBufferUploadHeaps[i]));
 
+#ifdef _DEBUG
 		ID3D12Resource_SetName(ConstantBufferUploadHeaps[i], L"Constant Buffer Upload Resource Heap");
+#endif
 
 		D3D12_RANGE ReadRange = { 0 };
 		ReadRange.Begin = 0;
 		ReadRange.End = 0;
 
-		THROW_ON_FAIL(ID3D12Resource_Map(ConstantBufferUploadHeaps[i], 0, &ReadRange, &cbvGPUAddress[i]));
+		THROW_ON_FAIL(ID3D12Resource_Map(ConstantBufferUploadHeaps[i], 0, &ReadRange, &ConstantBufferGPUAddress[i]));
 
-		memcpy(cbvGPUAddress[i], &cbPerObject, sizeof(cbPerObject));
-		memcpy(cbvGPUAddress[i] + ConstantBufferPerObjectAlignedSize, &cbPerObject, sizeof(cbPerObject));
+		memcpy(ConstantBufferGPUAddress[i], &ConstantBufferPerObject, sizeof(ConstantBufferPerObject));
+		memcpy(ConstantBufferGPUAddress[i] + ConstantBufferPerObjectAlignedSize, &ConstantBufferPerObject, sizeof(ConstantBufferPerObject));
 	}
 
 	{
@@ -868,11 +860,13 @@ int main()
 		HeapProperties.CreationNodeMask = 1;
 		HeapProperties.VisibleNodeMask = 1;
 
-		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &TextureResourceDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, &IID_ID3D12Resource, &textureBuffer));
+		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &TextureResourceDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, &IID_ID3D12Resource, &TextureBuffer));
 	}
 
-	ID3D12Resource_SetName(textureBuffer, L"Texture Buffer Resource Heap");
-	
+#ifdef _DEBUG
+	ID3D12Resource_SetName(TextureBuffer, L"Texture Buffer Resource Heap");
+#endif
+
 	{
 		D3D12_HEAP_PROPERTIES HeapProperties = { 0 };
 		HeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -897,7 +891,9 @@ int main()
 		THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &IID_ID3D12Resource, &TextureBufferUploadHeap));
 	}
 	
+#ifdef _DEBUG
 	ID3D12Resource_SetName(TextureBufferUploadHeap, L"Texture Buffer Upload Resource Heap");
+#endif
 
 	{
 		WORD* pData;
@@ -914,7 +910,7 @@ int main()
 		ID3D12Resource_Unmap(TextureBufferUploadHeap, 0, nullptr);
 
 		D3D12_TEXTURE_COPY_LOCATION TextureCopyDest = { 0 };
-		TextureCopyDest.pResource = textureBuffer;
+		TextureCopyDest.pResource = TextureBuffer;
 		TextureCopyDest.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 		TextureCopyDest.SubresourceIndex = 0;
 
@@ -935,7 +931,7 @@ int main()
 		D3D12_RESOURCE_BARRIER ResourceBarrier = { 0 };
 		ResourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		ResourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		ResourceBarrier.Transition.pResource = textureBuffer;
+		ResourceBarrier.Transition.pResource = TextureBuffer;
 		ResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
 		ResourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		ResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -952,7 +948,7 @@ int main()
 	D3D12_CPU_DESCRIPTOR_HANDLE CpuDescriptorHandle2;
 	ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(mainDescriptorHeap, &CpuDescriptorHandle2);
 
-	ID3D12Device_CreateShaderResourceView(Device, textureBuffer, &ResourceViewDesc, CpuDescriptorHandle2);
+	ID3D12Device_CreateShaderResourceView(Device, TextureBuffer, &ResourceViewDesc, CpuDescriptorHandle2);
 
 	ID3D12GraphicsCommandList_Close(CommandList);
 
@@ -1059,7 +1055,7 @@ int main()
 		THROW_ON_FAIL(ID3D12Resource_Release(RenderTargets[i]));
 	}
 
-	THROW_ON_FAIL(IDXGISwapChain4_Release(SwapChain));
+	THROW_ON_FAIL(IDXGISwapChain3_Release(SwapChain));
 
 	THROW_ON_FALSE(CloseHandle(FenceEvent));
 
@@ -1135,13 +1131,13 @@ LRESULT CALLBACK IdleProc(HWND Window, UINT message, WPARAM wParam, LPARAM lPara
 LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	static LARGE_INTEGER tickCount = { 0 };
+	RECT ClientRect;
 	switch (message)
 	{
 	case WM_KEYDOWN:
 		switch (wParam)
 		{
 		case VK_ESCAPE:
-			Running = false;
 			THROW_ON_FALSE(DestroyWindow(Window));
 			break;
 		case 'V':
@@ -1171,12 +1167,98 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		}
 		break;
 	case WM_SIZE:
-		if (IsIconic(Window))
-		{
-			THROW_ON_FALSE(SetWindowLongPtrW(Window, GWLP_WNDPROC, (LONG_PTR)IdleProc) != 0);
-			break;
-		}
+	
+
+	if (IsIconic(Window))
+	{
+		THROW_ON_FALSE(SetWindowLongPtrW(Window, GWLP_WNDPROC, (LONG_PTR)IdleProc) != 0);
 		break;
+	}
+	THROW_ON_FALSE(GetClientRect(Window, &ClientRect));
+
+	if (WindowWidth != (ClientRect.right - ClientRect.left) || WindowHeight != (ClientRect.bottom - ClientRect.top))
+	{
+		WindowWidth = ClientRect.right - ClientRect.left;
+		WindowHeight = ClientRect.bottom - ClientRect.top;
+		WaitForPreviousFrame();
+		
+
+		for (int i = 0; i < BUFFER_COUNT; i++)
+		{
+			THROW_ON_FAIL(ID3D12Resource_Release(RenderTargets[i]));
+			RenderTargets[i] = nullptr;
+
+			FenceValue[i] = FenceValue[FrameIndex] + 1;
+		}
+
+		DXGI_SWAP_CHAIN_DESC SwapChainDesc = { 0 };
+		THROW_ON_FAIL(IDXGISwapChain3_GetDesc(SwapChain, &SwapChainDesc));
+		THROW_ON_FAIL(IDXGISwapChain3_ResizeBuffers(SwapChain, BUFFER_COUNT, WindowWidth, WindowHeight, SwapChainDesc.BufferDesc.Format, SwapChainDesc.Flags));
+
+		FrameIndex = IDXGISwapChain3_GetCurrentBackBufferIndex(SwapChain);
+
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle;
+		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(rtvDescriptorHeap, &rtvHandle);
+
+		for (int i = 0; i < BUFFER_COUNT; i++)
+		{
+			THROW_ON_FAIL(IDXGISwapChain3_GetBuffer(SwapChain, i, &IID_ID3D12Resource, &RenderTargets[i]));
+
+			ID3D12Device_CreateRenderTargetView(Device, RenderTargets[i], nullptr, rtvHandle);
+
+			rtvHandle.ptr += rtvDescriptorSize;
+		}
+
+		{
+			D3D12_HEAP_PROPERTIES HeapProperties = { 0 };
+			HeapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+			HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+			HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+			HeapProperties.CreationNodeMask = 1;
+			HeapProperties.VisibleNodeMask = 1;
+
+			D3D12_RESOURCE_DESC ResourceDesc = { 0 };
+			ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+			ResourceDesc.Alignment = 0;
+			ResourceDesc.Width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+			ResourceDesc.Height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+			ResourceDesc.DepthOrArraySize = 1;
+			ResourceDesc.MipLevels = 1;
+			ResourceDesc.Format = DXGI_FORMAT_D32_FLOAT;
+			ResourceDesc.SampleDesc.Count = 1;
+			ResourceDesc.SampleDesc.Quality = 0;
+			ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+			ResourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
+
+			D3D12_CLEAR_VALUE ScreenClearValue = { 0 };
+			ScreenClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+			ScreenClearValue.DepthStencil.Depth = 1.0f;
+			ScreenClearValue.DepthStencil.Stencil = 0;
+
+			THROW_ON_FAIL(ID3D12Device_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &ScreenClearValue, &IID_ID3D12Resource, &DepthStencilBuffer));
+		}
+
+#ifdef _DEBUG
+		ID3D12DescriptorHeap_SetName(DepthStencilBuffer, L"Depth/Stencil Buffer");
+#endif
+
+		Viewport.TopLeftX = 0;
+		Viewport.TopLeftY = 0;
+		Viewport.Width = (FLOAT)WindowWidth;
+		Viewport.Height = (FLOAT)WindowHeight;
+		Viewport.MinDepth = 0.0F;
+		Viewport.MaxDepth = 1.0F;
+
+		ScissorRect.left = 0;
+		ScissorRect.top = 0;
+		ScissorRect.right = (LONG)WindowWidth;
+		ScissorRect.bottom = (LONG)WindowHeight;
+
+		glm_perspective_lh_zo(45.0f * (3.14f / 180.0f), (float)WindowWidth / (float)WindowHeight, 0.1f, 1000.0f, cameraProjMat);
+
+	}
+	break;
+	
 	case WM_PAINT:
 	{
 		WaitForPreviousFrame();
@@ -1227,9 +1309,9 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 
 		mat4 transposed;
 		glm_mat4_transpose_to(wvpMat, transposed);
-		glm_mat4_copy(transposed, cbPerObject.wvpMat);
+		glm_mat4_copy(transposed, ConstantBufferPerObject.wvpMat);
 
-		memcpy(cbvGPUAddress[FrameIndex], &cbPerObject, sizeof(cbPerObject));
+		memcpy(ConstantBufferGPUAddress[FrameIndex], &ConstantBufferPerObject, sizeof(ConstantBufferPerObject));
 
 		glm_mat4_identity(rotXMat);
 		glm_rotate_x(rotXMat, 0.03f * MovementFactor, rotXMat);
@@ -1261,13 +1343,11 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		glm_mat4_mul(wvpMat, cube2WorldMat, wvpMat);
 
 		glm_mat4_transpose_to(wvpMat, transposed);
-		glm_mat4_copy(transposed, cbPerObject.wvpMat);
+		glm_mat4_copy(transposed, ConstantBufferPerObject.wvpMat);
 
-		memcpy(cbvGPUAddress[FrameIndex] + ConstantBufferPerObjectAlignedSize, &cbPerObject, sizeof(cbPerObject));
+		memcpy(ConstantBufferGPUAddress[FrameIndex] + ConstantBufferPerObjectAlignedSize, &ConstantBufferPerObject, sizeof(ConstantBufferPerObject));
 
 		glm_mat4_copy(worldMat, cube2WorldMat);
-
-		WaitForPreviousFrame();
 
 		THROW_ON_FAIL(ID3D12CommandAllocator_Reset(CommandAllocator));
 
@@ -1347,7 +1427,6 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		break;
 	}
 	case WM_DESTROY:
-		Running = false;
 		PostQuitMessage(0);
 		break;
 	default:
@@ -1356,18 +1435,14 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 	return 0;
 }
 
-void WaitForPreviousFrame()
+inline void WaitForPreviousFrame()
 {
 	FrameIndex = IDXGISwapChain3_GetCurrentBackBufferIndex(SwapChain);
 	THROW_ON_FAIL(ID3D12CommandQueue_Signal(CommandQueue, Fence[FrameIndex], ++FenceValue[FrameIndex]));
 
 	if (ID3D12Fence_GetCompletedValue(Fence[FrameIndex]) < FenceValue[FrameIndex])
 	{
-		if (FAILED(ID3D12Fence_SetEventOnCompletion(Fence[FrameIndex], FenceValue[FrameIndex], FenceEvent)))
-		{
-			Running = false;
-		}
-
+		THROW_ON_FAIL(ID3D12Fence_SetEventOnCompletion(Fence[FrameIndex], FenceValue[FrameIndex], FenceEvent));
 		WaitForSingleObject(FenceEvent, INFINITE);
 	}
 }
