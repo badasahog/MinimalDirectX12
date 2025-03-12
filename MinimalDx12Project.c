@@ -176,7 +176,7 @@ static_assert(ARRAYSIZE(IndexList) < 256, "");
 
 static const int NUM_CUBE_INDICES = ARRAYSIZE(IndexList);
 
-static const UINT TEXTURE_WIDTH = 64;//todo: breaks when these are different
+static const UINT TEXTURE_WIDTH = 64;
 static const UINT TEXTURE_HEIGHT = 64;
 static const UINT BYTES_PER_TEXEL = 2;
 static const DXGI_FORMAT TEXTURE_FORMAT = DXGI_FORMAT_B5G6R5_UNORM;
@@ -800,7 +800,7 @@ int main()
 		{
 			for (UINT x = 0; x < TEXTURE_WIDTH; x++)
 			{
-				pData[(x * TEXTURE_WIDTH + y) * (BYTES_PER_TEXEL / sizeof(WORD))] = x == 0 || x == (TEXTURE_WIDTH - 1) || y == 0 || y == (TEXTURE_HEIGHT - 1) ? 0b1111100000000000 : rand() * (UINT16_MAX / RAND_MAX);
+				pData[(y * TEXTURE_WIDTH + x) * (BYTES_PER_TEXEL / sizeof(WORD))] = x == 0 || x == (TEXTURE_WIDTH - 1) || y == 0 || y == (TEXTURE_HEIGHT - 1) ? 0b1111100000000000 : rand() * (UINT16_MAX / RAND_MAX);
 			}
 		}
 		
