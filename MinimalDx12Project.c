@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 #include <stdbool.h>
 #include <stdalign.h>
 
@@ -209,10 +210,8 @@ struct DxObjects
 	ID3D12Resource* DepthStencilBuffer;
 	D3D12_CPU_DESCRIPTOR_HANDLE DsvHeapHandle;
 
-	UINT8* ContantBufferCPUAddress[BUFFER_COUNT];
-
-
-	UINT8* ConstantBufferGPUAddress[BUFFER_COUNT];
+	UINT8* ConstantBufferCPUAddress[BUFFER_COUNT];
+	D3D12_GPU_VIRTUAL_ADDRESS ContantBufferGPUAddress[BUFFER_COUNT];
 
 	ID3D12DescriptorHeap* ConstantBufferDescriptorHeap;
 	D3D12_GPU_DESCRIPTOR_HANDLE cbvGpuHandle;
@@ -722,9 +721,9 @@ int main()
 		ID3D12Resource_SetName(ConstantBufferHeaps[i], L"Constant Buffer Upload Resource Heap");
 #endif
 
-		THROW_ON_FAIL(ID3D12Resource_Map(ConstantBufferHeaps[i], 0, NULL, &DxObjects.ConstantBufferGPUAddress[i]));
+		THROW_ON_FAIL(ID3D12Resource_Map(ConstantBufferHeaps[i], 0, NULL, &DxObjects.ConstantBufferCPUAddress[i]));
 
-		DxObjects.ContantBufferCPUAddress[i] = ID3D12Resource_GetGPUVirtualAddress(ConstantBufferHeaps[i]);
+		DxObjects.ContantBufferGPUAddress[i] = ID3D12Resource_GetGPUVirtualAddress(ConstantBufferHeaps[i]);
 	}
 
 
@@ -801,7 +800,7 @@ int main()
 		{
 			for (UINT x = 0; x < TEXTURE_WIDTH; x++)
 			{
-				pData[(x * TEXTURE_WIDTH + y) * (BYTES_PER_TEXEL / sizeof(WORD))] = x == 0 || x == (TEXTURE_WIDTH - 1) || y == 0 || y == (TEXTURE_HEIGHT - 1) ? 0b11111'000000'00000 : rand() * (UINT16_MAX / RAND_MAX);
+				pData[(x * TEXTURE_WIDTH + y) * (BYTES_PER_TEXEL / sizeof(WORD))] = x == 0 || x == (TEXTURE_WIDTH - 1) || y == 0 || y == (TEXTURE_HEIGHT - 1) ? 0b1111100000000000 : rand() * (UINT16_MAX / RAND_MAX);
 			}
 		}
 		
@@ -1278,7 +1277,7 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		glm_mat4_transpose_to(wvpMat, transposed);
 		glm_mat4_copy(transposed, ConstantBufferPerObject);
 
-		memcpy(DxObjects->ConstantBufferGPUAddress[SyncObjects->FrameIndex], &ConstantBufferPerObject, sizeof(ConstantBufferPerObject));
+		memcpy(DxObjects->ConstantBufferCPUAddress[SyncObjects->FrameIndex], &ConstantBufferPerObject, sizeof(ConstantBufferPerObject));
 
 		glm_mat4_identity(rotXMat);
 		glm_rotate_x(rotXMat, 0.03f * MovementFactor, rotXMat);
@@ -1312,7 +1311,7 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		glm_mat4_transpose_to(wvpMat, transposed);
 		glm_mat4_copy(transposed, ConstantBufferPerObject);
 
-		memcpy(DxObjects->ConstantBufferGPUAddress[SyncObjects->FrameIndex] + ConstantBufferPerObjectAlignedSize, &ConstantBufferPerObject, sizeof(ConstantBufferPerObject));
+		memcpy(DxObjects->ConstantBufferCPUAddress[SyncObjects->FrameIndex] + ConstantBufferPerObjectAlignedSize, &ConstantBufferPerObject, sizeof(ConstantBufferPerObject));
 
 		glm_mat4_copy(worldMat, Camera.cube2WorldMat);
 
@@ -1353,9 +1352,9 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		ID3D12GraphicsCommandList7_IASetPrimitiveTopology(DxObjects->CommandList, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		ID3D12GraphicsCommandList7_IASetVertexBuffers(DxObjects->CommandList, 0, 1, &DxObjects->VertexBufferView);
 		ID3D12GraphicsCommandList7_IASetIndexBuffer(DxObjects->CommandList, &DxObjects->IndexBufferView);
-		ID3D12GraphicsCommandList7_SetGraphicsRootConstantBufferView(DxObjects->CommandList, 0, DxObjects->ContantBufferCPUAddress[SyncObjects->FrameIndex]);
+		ID3D12GraphicsCommandList7_SetGraphicsRootConstantBufferView(DxObjects->CommandList, 0, DxObjects->ContantBufferGPUAddress[SyncObjects->FrameIndex]);
 		ID3D12GraphicsCommandList7_DrawIndexedInstanced(DxObjects->CommandList, NUM_CUBE_INDICES, 1, 0, 0, 0);
-		ID3D12GraphicsCommandList7_SetGraphicsRootConstantBufferView(DxObjects->CommandList, 0, DxObjects->ContantBufferCPUAddress[SyncObjects->FrameIndex] + ConstantBufferPerObjectAlignedSize);
+		ID3D12GraphicsCommandList7_SetGraphicsRootConstantBufferView(DxObjects->CommandList, 0, DxObjects->ContantBufferGPUAddress[SyncObjects->FrameIndex] + ConstantBufferPerObjectAlignedSize);
 		ID3D12GraphicsCommandList7_DrawIndexedInstanced(DxObjects->CommandList, NUM_CUBE_INDICES, 1, 0, 0, 0);
 
 		{
