@@ -726,12 +726,11 @@ int main()
 		DxObjects.ContantBufferGPUAddress[i] = ID3D12Resource_GetGPUVirtualAddress(ConstantBufferHeaps[i]);
 	}
 
-
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC HeapDesc = { 0 };
+		HeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		HeapDesc.NumDescriptors = 1;
 		HeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		HeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		THROW_ON_FAIL(ID3D12Device2_CreateDescriptorHeap(Device, &HeapDesc, &IID_ID3D12DescriptorHeap, &DxObjects.ConstantBufferDescriptorHeap));
 	}
 
