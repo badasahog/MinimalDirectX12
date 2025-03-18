@@ -51,13 +51,13 @@ __declspec(dllexport) UINT D3D12SDKVersion = 612;
 __declspec(dllexport) char* D3D12SDKPath = ".\\D3D12\\";
 
 HANDLE ConsoleHandle;
-ID3D12Device2* Device;
+ID3D12Device10* Device;
 
 inline void THROW_ON_FAIL_IMPL(HRESULT hr, int line)
 {
 	if (hr == 0x887A0005)//device removed
 	{
-		THROW_ON_FAIL_IMPL(ID3D12Device2_GetDeviceRemovedReason(Device), line);
+		THROW_ON_FAIL_IMPL(ID3D12Device10_GetDeviceRemovedReason(Device), line);
 	}
 
 	if (FAILED(hr))
@@ -213,8 +213,8 @@ struct DxObjects
 	UINT8* ConstantBufferCPUAddress[BUFFER_COUNT];
 	D3D12_GPU_VIRTUAL_ADDRESS ContantBufferGPUAddress[BUFFER_COUNT];
 
-	ID3D12DescriptorHeap* ConstantBufferDescriptorHeap;
-	D3D12_GPU_DESCRIPTOR_HANDLE cbvGpuHandle;
+	ID3D12DescriptorHeap* SRVDescriptorHeap;
+	D3D12_GPU_DESCRIPTOR_HANDLE SrvGpuHandle;
 };
 
 struct SyncObjects
@@ -325,13 +325,13 @@ int main()
 		IDXGIFactory6_EnumAdapterByGpuPreference(Factory, 0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, &IID_IDXGIAdapter1, &Adapter);
 	}
 
-	THROW_ON_FAIL(D3D12CreateDevice(Adapter, D3D_FEATURE_LEVEL_12_1, &IID_ID3D12Device2, &Device));
+	THROW_ON_FAIL(D3D12CreateDevice(Adapter, D3D_FEATURE_LEVEL_12_1, &IID_ID3D12Device10, &Device));
 
 	THROW_ON_FAIL(IDXGIAdapter1_Release(Adapter));
 
 #ifdef _DEBUG
 	ID3D12InfoQueue* InfoQueue;
-	THROW_ON_FAIL(ID3D12Device2_QueryInterface(Device, &IID_ID3D12InfoQueue, &InfoQueue));
+	THROW_ON_FAIL(ID3D12Device10_QueryInterface(Device, &IID_ID3D12InfoQueue, &InfoQueue));
 
 	THROW_ON_FAIL(ID3D12InfoQueue_SetBreakOnSeverity(InfoQueue, D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE));
 	THROW_ON_FAIL(ID3D12InfoQueue_SetBreakOnSeverity(InfoQueue, D3D12_MESSAGE_SEVERITY_ERROR, TRUE));
@@ -343,7 +343,7 @@ int main()
 		CommandQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 		CommandQueueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
 		CommandQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-		THROW_ON_FAIL(ID3D12Device2_CreateCommandQueue(Device, &CommandQueueDesc, &IID_ID3D12CommandQueue, &DxObjects.CommandQueue));
+		THROW_ON_FAIL(ID3D12Device10_CreateCommandQueue(Device, &CommandQueueDesc, &IID_ID3D12CommandQueue, &DxObjects.CommandQueue));
 	}
 
 	{
@@ -376,20 +376,20 @@ int main()
 		RtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 		RtvHeapDesc.NumDescriptors = BUFFER_COUNT;
 		RtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		THROW_ON_FAIL(ID3D12Device2_CreateDescriptorHeap(Device, &RtvHeapDesc, &IID_ID3D12DescriptorHeap, &RtvDescriptorHeap));
+		THROW_ON_FAIL(ID3D12Device10_CreateDescriptorHeap(Device, &RtvHeapDesc, &IID_ID3D12DescriptorHeap, &RtvDescriptorHeap));
 	}
 
 	ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(RtvDescriptorHeap, &DxObjects.RtvHeapHandle);
 	
-	DxObjects.RtvDescriptorSize = ID3D12Device2_GetDescriptorHandleIncrementSize(Device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	DxObjects.RtvDescriptorSize = ID3D12Device10_GetDescriptorHandleIncrementSize(Device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-	THROW_ON_FAIL(ID3D12Device2_CreateCommandAllocator(Device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &DxObjects.CommandAllocator));
+	THROW_ON_FAIL(ID3D12Device10_CreateCommandAllocator(Device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &DxObjects.CommandAllocator));
 	
-	THROW_ON_FAIL(ID3D12Device2_CreateCommandList(Device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, DxObjects.CommandAllocator, NULL, &IID_ID3D12GraphicsCommandList7, &DxObjects.CommandList));
+	THROW_ON_FAIL(ID3D12Device10_CreateCommandList(Device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, DxObjects.CommandAllocator, NULL, &IID_ID3D12GraphicsCommandList7, &DxObjects.CommandList));
 
 	for (int i = 0; i < BUFFER_COUNT; i++)
 	{
-		THROW_ON_FAIL(ID3D12Device2_CreateFence(Device, 0, D3D12_FENCE_FLAG_NONE, &IID_ID3D12Fence, &SyncObjects.Fence[i]));
+		THROW_ON_FAIL(ID3D12Device10_CreateFence(Device, 0, D3D12_FENCE_FLAG_NONE, &IID_ID3D12Fence, &SyncObjects.Fence[i]));
 		SyncObjects.FenceValue[i] = 0;
 	}
 
@@ -444,7 +444,7 @@ int main()
 
 		ID3D10Blob* Signature;
 		THROW_ON_FAIL(D3D12SerializeVersionedRootSignature(&RootSignatureDesc, &Signature, NULL));
-		THROW_ON_FAIL(ID3D12Device2_CreateRootSignature(Device, 0, ID3D10Blob_GetBufferPointer(Signature), ID3D10Blob_GetBufferSize(Signature), &IID_ID3D12RootSignature, &DxObjects.RootSignature));
+		THROW_ON_FAIL(ID3D12Device10_CreateRootSignature(Device, 0, ID3D10Blob_GetBufferPointer(Signature), ID3D10Blob_GetBufferSize(Signature), &IID_ID3D12RootSignature, &DxObjects.RootSignature));
 		THROW_ON_FAIL(ID3D10Blob_Release(Signature));
 	}
 
@@ -540,7 +540,7 @@ int main()
 	PsoStreamDesc.SizeInBytes = sizeof(PipelineStateObject);
 	PsoStreamDesc.pPipelineStateSubobjectStream = &PipelineStateObject;
 
-	THROW_ON_FAIL(ID3D12Device2_CreatePipelineState(Device, &PsoStreamDesc, &IID_ID3D12PipelineState, &DxObjects.PipelineStateObject));
+	THROW_ON_FAIL(ID3D12Device10_CreatePipelineState(Device, &PsoStreamDesc, &IID_ID3D12PipelineState, &DxObjects.PipelineStateObject));
 
 	THROW_ON_FALSE(UnmapViewOfFile(VertexShaderBytecode));
 	THROW_ON_FALSE(CloseHandle(VertexShaderFileMap));
@@ -553,7 +553,7 @@ int main()
 	ID3D12Resource* VertexBufferUploadHeap;
 
 	{
-		D3D12_RESOURCE_DESC ResourceDesc = { 0 };
+		D3D12_RESOURCE_DESC1 ResourceDesc = { 0 };
 		ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 		ResourceDesc.Alignment = 0;
 		ResourceDesc.Width = sizeof(VertexList);
@@ -566,28 +566,32 @@ int main()
 		ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-		D3D12_HEAP_PROPERTIES HeapProperties = { 0 };
-		HeapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
-		HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+		{
+			D3D12_HEAP_PROPERTIES HeapProperties = { 0 };
+			HeapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+			HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+			HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+			THROW_ON_FAIL(ID3D12Device10_CreateCommittedResource3(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_BARRIER_LAYOUT_UNDEFINED, NULL, NULL, 0, NULL, &IID_ID3D12Resource, &DxObjects.VertexBuffer));
+		}
 
-		THROW_ON_FAIL(ID3D12Device2_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, &DxObjects.VertexBuffer));
-		
 #ifdef _DEBUG
 		ID3D12Resource_SetName(DxObjects.VertexBuffer, L"Vertex Buffer Resource");
 #endif
-		
-		D3D12_HEAP_PROPERTIES UploadHeapProperties = { 0 };
-		UploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
-		UploadHeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		UploadHeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-		THROW_ON_FAIL(ID3D12Device2_CreateCommittedResource(Device, &UploadHeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, &VertexBufferUploadHeap));
-		
+		{
+			D3D12_HEAP_PROPERTIES HeapProperties = { 0 };
+			HeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+			HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+			HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+			THROW_ON_FAIL(ID3D12Device10_CreateCommittedResource3(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_BARRIER_LAYOUT_UNDEFINED, NULL, NULL, 0, NULL, &IID_ID3D12Resource, &VertexBufferUploadHeap));
+		}
+
 #ifdef _DEBUG
 		ID3D12Resource_SetName(VertexBufferUploadHeap, L"Vertex Buffer Upload Heap");
 #endif
-
+	}
+	
+	{
 		void* pData;
 		THROW_ON_FAIL(ID3D12Resource_Map(VertexBufferUploadHeap, 0, NULL, &pData));
 		MEMCPY_VERIFY(memcpy_s(pData, sizeof(VertexList), VertexList, sizeof(VertexList)));
@@ -616,7 +620,7 @@ int main()
 	ID3D12Resource* IndexBufferUploadHeap;
 
 	{
-		D3D12_RESOURCE_DESC ResourceDesc = { 0 };
+		D3D12_RESOURCE_DESC1 ResourceDesc = { 0 };
 		ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 		ResourceDesc.Alignment = 0;
 		ResourceDesc.Width = sizeof(IndexList);
@@ -634,25 +638,27 @@ int main()
 			HeapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
 			HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 			HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-			THROW_ON_FAIL(ID3D12Device2_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, &DxObjects.IndexBuffer));
+			THROW_ON_FAIL(ID3D12Device10_CreateCommittedResource3(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_BARRIER_LAYOUT_UNDEFINED, NULL, NULL, 0, NULL, &IID_ID3D12Resource, &DxObjects.IndexBuffer));
 		}
 
 #ifdef _DEBUG
 		ID3D12Resource_SetName(DxObjects.IndexBuffer, L"Index Buffer Resource");
 #endif
-		
+
 		{
 			D3D12_HEAP_PROPERTIES HeapProperties = { 0 };
 			HeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
 			HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 			HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-			THROW_ON_FAIL(ID3D12Device2_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, &IndexBufferUploadHeap));
+			THROW_ON_FAIL(ID3D12Device10_CreateCommittedResource3(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_BARRIER_LAYOUT_UNDEFINED, NULL, NULL, 0, NULL, &IID_ID3D12Resource, &IndexBufferUploadHeap));
 		}
 
 #ifdef _DEBUG
 		ID3D12Resource_SetName(IndexBufferUploadHeap, L"Index Buffer Upload Heap");
 #endif
+	}
 
+	{
 		void* pData;
 		THROW_ON_FAIL(ID3D12Resource_Map(IndexBufferUploadHeap, 0, NULL, &pData));
 		MEMCPY_VERIFY(memcpy_s(pData, sizeof(IndexList), IndexList, sizeof(IndexList)));
@@ -685,7 +691,7 @@ int main()
 		DsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 		DsvHeapDesc.NumDescriptors = 1;
 		DsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		THROW_ON_FAIL(ID3D12Device2_CreateDescriptorHeap(Device, &DsvHeapDesc, &IID_ID3D12DescriptorHeap, &DepthStencilDescriptorHeap));
+		THROW_ON_FAIL(ID3D12Device10_CreateDescriptorHeap(Device, &DsvHeapDesc, &IID_ID3D12DescriptorHeap, &DepthStencilDescriptorHeap));
 	}
 
 #ifdef _DEBUG
@@ -703,7 +709,7 @@ int main()
 		HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-		D3D12_RESOURCE_DESC ResourceDesc = { 0 };
+		D3D12_RESOURCE_DESC1 ResourceDesc = { 0 };
 		ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 		ResourceDesc.Alignment = 0;
 		ResourceDesc.Width = ConstantBufferPerObjectAlignedSize * 2;
@@ -715,7 +721,7 @@ int main()
 		ResourceDesc.SampleDesc.Quality = 0;
 		ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-		THROW_ON_FAIL(ID3D12Device2_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, &ConstantBufferHeaps[i]));
+		THROW_ON_FAIL(ID3D12Device10_CreateCommittedResource3(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_BARRIER_LAYOUT_UNDEFINED, NULL, NULL, 0, NULL, &IID_ID3D12Resource, &ConstantBufferHeaps[i]));
 
 #ifdef _DEBUG
 		ID3D12Resource_SetName(ConstantBufferHeaps[i], L"Constant Buffer Upload Resource Heap");
@@ -731,10 +737,10 @@ int main()
 		HeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		HeapDesc.NumDescriptors = 1;
 		HeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		THROW_ON_FAIL(ID3D12Device2_CreateDescriptorHeap(Device, &HeapDesc, &IID_ID3D12DescriptorHeap, &DxObjects.ConstantBufferDescriptorHeap));
+		THROW_ON_FAIL(ID3D12Device10_CreateDescriptorHeap(Device, &HeapDesc, &IID_ID3D12DescriptorHeap, &DxObjects.SRVDescriptorHeap));
 	}
 
-	ID3D12DescriptorHeap_GetGPUDescriptorHandleForHeapStart(DxObjects.ConstantBufferDescriptorHeap, &DxObjects.cbvGpuHandle);
+	ID3D12DescriptorHeap_GetGPUDescriptorHandleForHeapStart(DxObjects.SRVDescriptorHeap, &DxObjects.SrvGpuHandle);
 	
 	ID3D12Resource* TextureBuffer;
 
@@ -744,7 +750,7 @@ int main()
 		HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-		D3D12_RESOURCE_DESC TextureResourceDesc = { 0 };
+		D3D12_RESOURCE_DESC1 TextureResourceDesc = { 0 };
 		TextureResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 		TextureResourceDesc.Alignment = 0;
 		TextureResourceDesc.Width = TEXTURE_WIDTH;
@@ -755,9 +761,8 @@ int main()
 		TextureResourceDesc.SampleDesc.Count = 1;
 		TextureResourceDesc.SampleDesc.Quality = 0;
 		TextureResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		TextureResourceDesc.Flags = 0;
-
-		THROW_ON_FAIL(ID3D12Device2_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &TextureResourceDesc, D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, &TextureBuffer));
+		TextureResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+		THROW_ON_FAIL(ID3D12Device10_CreateCommittedResource3(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &TextureResourceDesc, D3D12_BARRIER_LAYOUT_COMMON, NULL, NULL, 0, NULL, &IID_ID3D12Resource, &TextureBuffer));
 	}
 
 #ifdef _DEBUG
@@ -772,7 +777,7 @@ int main()
 		HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-		D3D12_RESOURCE_DESC ResourceDesc = { 0 };
+		D3D12_RESOURCE_DESC1 ResourceDesc = { 0 };
 		ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 		ResourceDesc.Alignment = 0;
 		ResourceDesc.Width = TEXTURE_WIDTH * TEXTURE_HEIGHT * BYTES_PER_TEXEL;
@@ -784,7 +789,7 @@ int main()
 		ResourceDesc.SampleDesc.Quality = 0;
 		ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-		THROW_ON_FAIL(ID3D12Device2_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, &IID_ID3D12Resource, &TextureBufferUploadHeap));
+		THROW_ON_FAIL(ID3D12Device10_CreateCommittedResource3(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_BARRIER_LAYOUT_UNDEFINED, NULL, NULL, 0, NULL, &IID_ID3D12Resource, &TextureBufferUploadHeap));
 	}
 	
 #ifdef _DEBUG
@@ -847,9 +852,9 @@ int main()
 		ResourceViewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		ResourceViewDesc.Texture2D.MipLevels = 1;
 
-		D3D12_CPU_DESCRIPTOR_HANDLE cbvHandle;
-		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(DxObjects.ConstantBufferDescriptorHeap, &cbvHandle);
-		ID3D12Device2_CreateShaderResourceView(Device, TextureBuffer, &ResourceViewDesc, cbvHandle);
+		D3D12_CPU_DESCRIPTOR_HANDLE srvHandle;
+		ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(DxObjects.SRVDescriptorHeap, &srvHandle);
+		ID3D12Device10_CreateShaderResourceView(Device, TextureBuffer, &ResourceViewDesc, srvHandle);
 	}
 
 	ID3D12GraphicsCommandList7_Close(DxObjects.CommandList);
@@ -938,7 +943,7 @@ int main()
 
 	THROW_ON_FAIL(ID3D12DescriptorHeap_Release(RtvDescriptorHeap));
 	THROW_ON_FAIL(ID3D12DescriptorHeap_Release(DepthStencilDescriptorHeap)); 
-	THROW_ON_FAIL(ID3D12DescriptorHeap_Release(DxObjects.ConstantBufferDescriptorHeap));
+	THROW_ON_FAIL(ID3D12DescriptorHeap_Release(DxObjects.SRVDescriptorHeap));
 
 	THROW_ON_FAIL(ID3D12Resource_Release(DxObjects.VertexBuffer));
 	THROW_ON_FAIL(ID3D12Resource_Release(DxObjects.IndexBuffer));
@@ -948,7 +953,7 @@ int main()
 	THROW_ON_FAIL(ID3D12InfoQueue_Release(InfoQueue));
 #endif
 
-	THROW_ON_FAIL(ID3D12Device2_Release(Device));
+	THROW_ON_FAIL(ID3D12Device10_Release(Device));
 
 #ifdef _DEBUG
 	THROW_ON_FAIL(ID3D12Debug6_Release(DebugController));
@@ -1175,7 +1180,7 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 			for (int i = 0; i < BUFFER_COUNT; i++)
 			{
 				THROW_ON_FAIL(IDXGISwapChain3_GetBuffer(DxObjects->SwapChain, i, &IID_ID3D12Resource, &DxObjects->RenderTargets[i]));
-				ID3D12Device2_CreateRenderTargetView(Device, DxObjects->RenderTargets[i], NULL, RtvHandle);
+				ID3D12Device10_CreateRenderTargetView(Device, DxObjects->RenderTargets[i], NULL, RtvHandle);
 				RtvHandle.ptr += DxObjects->RtvDescriptorSize;
 			}
 		}
@@ -1191,7 +1196,7 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 			HeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 			HeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-			D3D12_RESOURCE_DESC ResourceDesc = { 0 };
+			D3D12_RESOURCE_DESC1 ResourceDesc = { 0 };
 			ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 			ResourceDesc.Alignment = 0;
 			ResourceDesc.Width = WindowDetails.WindowWidth;
@@ -1209,7 +1214,7 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 			ScreenClearValue.DepthStencil.Depth = 1.0f;
 			ScreenClearValue.DepthStencil.Stencil = 0;
 
-			THROW_ON_FAIL(ID3D12Device2_CreateCommittedResource(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &ScreenClearValue, &IID_ID3D12Resource, &DxObjects->DepthStencilBuffer));
+			THROW_ON_FAIL(ID3D12Device10_CreateCommittedResource3(Device, &HeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE, &ScreenClearValue, NULL, 0, NULL, &IID_ID3D12Resource, &DxObjects->DepthStencilBuffer));
 		}
 
 #ifdef _DEBUG
@@ -1221,7 +1226,7 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 			DepthStencilViewDesc.Format = DSV_FORMAT;
 			DepthStencilViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 			DepthStencilViewDesc.Flags = D3D12_DSV_FLAG_NONE;
-			ID3D12Device2_CreateDepthStencilView(Device, DxObjects->DepthStencilBuffer, &DepthStencilViewDesc, DxObjects->DsvHeapHandle);
+			ID3D12Device10_CreateDepthStencilView(Device, DxObjects->DepthStencilBuffer, &DepthStencilViewDesc, DxObjects->DsvHeapHandle);
 		}
 		break;
 	}
@@ -1343,9 +1348,9 @@ LRESULT CALLBACK WndProc(HWND Window, UINT message, WPARAM wParam, LPARAM lParam
 		
 		ID3D12GraphicsCommandList7_SetGraphicsRootSignature(DxObjects->CommandList, DxObjects->RootSignature);
 
-		ID3D12GraphicsCommandList7_SetDescriptorHeaps(DxObjects->CommandList, 1, &DxObjects->ConstantBufferDescriptorHeap);
+		ID3D12GraphicsCommandList7_SetDescriptorHeaps(DxObjects->CommandList, 1, &DxObjects->SRVDescriptorHeap);
 
-		ID3D12GraphicsCommandList7_SetGraphicsRootDescriptorTable(DxObjects->CommandList, 1, DxObjects->cbvGpuHandle);
+		ID3D12GraphicsCommandList7_SetGraphicsRootDescriptorTable(DxObjects->CommandList, 1, DxObjects->SrvGpuHandle);
 		ID3D12GraphicsCommandList7_RSSetViewports(DxObjects->CommandList, 1, &WindowDetails.Viewport);
 		ID3D12GraphicsCommandList7_RSSetScissorRects(DxObjects->CommandList, 1, &WindowDetails.ScissorRect);
 		ID3D12GraphicsCommandList7_IASetPrimitiveTopology(DxObjects->CommandList, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
